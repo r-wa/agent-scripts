@@ -7,8 +7,8 @@ a short `description`.
 
 ```md
 ---
-name: skill-name
-description: "Short generic trigger phrase."
+name: product-researcher
+description: Evidence-led product and implementation research with market, customer, technical, architecture, and review threads.
 ---
 ```
 

@@ -1,0 +1,678 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import shutil
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+MODES = {
+    "build-what",
+    "build-how",
+    "market-map",
+    "implementation-map",
+    "customer-value",
+    "architecture",
+    "provider-specific",
+}
+
+THREADS = {
+    "market-scout": "map products, adjacent solutions, feature patterns, and assets",
+    "technical-investigator": "inspect implementation approaches, code, docs, SDKs, and risks",
+    "customer-value": "challenge user value, workflow fit, objections, and adoption risk",
+    "architect": "turn evidence into a repo-aware build strategy and validation plan",
+    "skeptic": "adversarially review claims, confidence, gaps, and closeout readiness",
+}
+
+REQUIRED_THREADS_BY_MODE = {
+    "build-what": ["market-scout", "customer-value", "skeptic"],
+    "build-how": ["technical-investigator", "architect", "skeptic"],
+    "market-map": ["market-scout", "skeptic"],
+    "implementation-map": ["market-scout", "technical-investigator", "architect", "skeptic"],
+    "customer-value": ["customer-value", "market-scout", "skeptic"],
+    "architecture": ["architect", "technical-investigator", "skeptic"],
+    "provider-specific": ["technical-investigator", "skeptic"],
+}
+
+BRIEF_HEADINGS = [
+    "## Recommendation",
+    "## Evidence",
+    "## Validation",
+    "## Next Slice",
+]
+
+FINDINGS_HEADINGS = [
+    "## Accepted",
+    "## Rejected",
+    "## Deferred",
+]
+
+REVIEW_HEADINGS = [
+    "## Decision",
+    "## Verdict",
+    "## Accepted Findings",
+    "## Rejected Findings",
+    "## Deferred Findings",
+    "## Evidence Ledger",
+    "## Confidence",
+    "## Assurance",
+]
+
+REPORT_HEADINGS = [
+    "## Evidence",
+    "## Claims",
+    "## Contradictions Or Gaps",
+    "## Recommendation",
+    "## Validation Needed",
+]
+
+VERDICT_RE = re.compile(r"(?im)^verdict:\s*(ready|blocked|not_ready)\s*$")
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug[:60] or "research-goal"
+
+
+def read_state(bundle: Path) -> dict:
+    state_path = bundle / "state.json"
+    if not state_path.exists():
+        raise SystemExit(f"missing state.json: {bundle}")
+    return json.loads(state_path.read_text(encoding="utf-8"))
+
+
+def save_state(bundle: Path, state: dict) -> None:
+    state["updated_at"] = utc_now()
+    write_text(bundle / "state.json", json.dumps(state, indent=2) + "\n")
+
+
+def thread_state(state: dict) -> dict:
+    threads = state.get("threads")
+    if not isinstance(threads, dict):
+        threads = {}
+        state["threads"] = threads
+    return threads
+
+
+def write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def required_threads_for_mode(mode: str) -> list[str]:
+    return REQUIRED_THREADS_BY_MODE.get(mode, sorted(THREADS))
+
+
+def init_bundle(args: argparse.Namespace) -> int:
+    mode = args.mode
+    if mode not in MODES:
+        raise SystemExit(f"unknown mode: {mode}")
+
+    bundle = Path(args.out) if args.out else Path("research") / f"{datetime.now():%Y%m%d-%H%M%S}-{slugify(args.goal)}"
+    if bundle.exists() and any(bundle.iterdir()):
+        raise SystemExit(f"bundle already exists and is not empty: {bundle}")
+    bundle.mkdir(parents=True, exist_ok=True)
+    (bundle / "threads").mkdir()
+
+    state = {
+        "goal": args.goal,
+        "mode": mode,
+        "decision": args.decision or "",
+        "context": args.context or "",
+        "constraints": args.constraints or "",
+        "handoff_needed": bool(args.handoff),
+        "status": "active",
+        "created_at": utc_now(),
+        "updated_at": utc_now(),
+        "required_threads": required_threads_for_mode(mode),
+        "threads": {},
+    }
+    write_text(bundle / "state.json", json.dumps(state, indent=2) + "\n")
+    write_text(
+        bundle / "goal.md",
+        f"""# Goal
+
+{args.goal}
+
+## Mode
+
+{mode}
+
+## Decision
+
+{args.decision or "TBD"}
+
+## Context
+
+{args.context or "TBD"}
+
+## Constraints
+
+{args.constraints or "TBD"}
+
+## Implementation Handoff
+
+{"needed" if args.handoff else "not requested"}
+
+## Success Criteria
+
+- [ ] Evidence captured with source IDs.
+- [ ] Required worker threads completed or explicitly skipped.
+- [ ] Skeptic findings resolved or rejected with reasons.
+- [ ] Brief contains recommendation, evidence, validation, and next slice.
+""",
+    )
+    write_text(
+        bundle / "brief.md",
+        f"""# Research Brief
+
+## Recommendation
+
+TBD
+
+## Evidence
+
+TBD
+
+## Validation
+
+TBD
+
+## Next Slice
+
+TBD
+""",
+    )
+    write_text(bundle / "sources.md", "# Sources\n\n")
+    write_text(
+        bundle / "findings.md",
+        """# Findings
+
+## Accepted
+
+TBD
+
+## Rejected
+
+TBD
+
+## Deferred
+
+TBD
+""",
+    )
+    write_text(
+        bundle / "review.md",
+        """# Research Review
+
+## Decision
+
+TBD
+
+## Verdict
+
+verdict: not_ready
+
+## Accepted Findings
+
+TBD
+
+## Rejected Findings
+
+TBD
+
+## Deferred Findings
+
+TBD
+
+## Evidence Ledger
+
+TBD
+
+## Confidence
+
+TBD
+
+## Assurance
+
+TBD
+""",
+    )
+    write_text(
+        bundle / "threads" / "README.md",
+        "# Worker Thread Reports\n\nUse `product-research worker-prompt` to create bounded worker prompts.\n",
+    )
+
+    print(bundle)
+    return 0
+
+
+def validate_bundle(bundle: Path) -> list[str]:
+    errors: list[str] = []
+
+    for rel in ["state.json", "goal.md", "brief.md", "sources.md", "findings.md"]:
+        if not (bundle / rel).exists():
+            errors.append(f"missing {rel}")
+
+    threads = bundle / "threads"
+    if not threads.is_dir():
+        errors.append("missing threads/")
+
+    if (bundle / "state.json").exists():
+        try:
+            state = read_state(bundle)
+        except Exception as exc:
+            errors.append(f"invalid state.json: {exc}")
+        else:
+            if not state.get("goal"):
+                errors.append("state.json missing goal")
+            if state.get("mode") not in MODES:
+                errors.append("state.json has invalid mode")
+            if state.get("status") not in {"active", "not_ready", "blocked", "ready", "closed"}:
+                errors.append("state.json has invalid status")
+
+    return errors
+
+
+def validate_report(path: Path) -> list[str]:
+    errors: list[str] = []
+    if not path.exists():
+        return [f"missing report: {path}"]
+
+    text = path.read_text(encoding="utf-8")
+    if len(text.strip()) < 120:
+        errors.append(f"{path}: report too short")
+    for heading in REPORT_HEADINGS:
+        if not has_markdown_heading(text, heading):
+            errors.append(f"{path}: missing {heading}")
+    if has_placeholder(text):
+        errors.append(f"{path}: report still contains TBD")
+    if not re.search(r"^- \[[^\]]+\]", text, re.MULTILINE):
+        errors.append(f"{path}: report has no source-id evidence entries")
+    if not re.search(r"confidence:\s*(low|medium|high)", text, re.IGNORECASE):
+        errors.append(f"{path}: report has no confidence marker")
+    return errors
+
+
+def has_placeholder(text: str) -> bool:
+    return bool(re.search(r"(?m)^\s*TBD\s*$", text))
+
+
+def extract_verdict(text: str) -> str | None:
+    match = VERDICT_RE.search(text)
+    return match.group(1).lower() if match else None
+
+
+def read_review(bundle: Path) -> str:
+    return (bundle / "review.md").read_text(encoding="utf-8")
+
+
+def review_verdict(bundle: Path) -> str | None:
+    return extract_verdict(read_review(bundle)) if (bundle / "review.md").exists() else None
+
+
+def markdown_section(text: str, heading: str) -> str:
+    match = re.search(rf"(?ms)^{re.escape(heading)}\s*\n(.*?)(?=^## |\Z)", text)
+    return match.group(1).strip() if match else ""
+
+
+def has_markdown_heading(text: str, heading: str) -> bool:
+    return bool(re.search(rf"(?m)^{re.escape(heading)}\s*$", text))
+
+
+def assurance_errors(bundle: Path, *, require_ready: bool = True) -> list[str]:
+    errors = validate_bundle(bundle)
+
+    brief = (bundle / "brief.md").read_text(encoding="utf-8") if (bundle / "brief.md").exists() else ""
+    for heading in BRIEF_HEADINGS:
+        if not has_markdown_heading(brief, heading):
+            errors.append(f"brief missing {heading}")
+
+    findings = (bundle / "findings.md").read_text(encoding="utf-8") if (bundle / "findings.md").exists() else ""
+    for heading in FINDINGS_HEADINGS:
+        if not has_markdown_heading(findings, heading):
+            errors.append(f"findings missing {heading}")
+    if "- [ ]" in findings:
+        errors.append("findings.md has unresolved checklist items")
+    if has_placeholder(findings):
+        errors.append("findings.md still contains TBD")
+
+    review_path = bundle / "review.md"
+    review = review_path.read_text(encoding="utf-8") if review_path.exists() else ""
+    if not review_path.exists():
+        errors.append("missing review.md")
+    for heading in REVIEW_HEADINGS:
+        if not has_markdown_heading(review, heading):
+            errors.append(f"review missing {heading}")
+    if "- [ ]" in review:
+        errors.append("review.md has unresolved checklist items")
+    if has_placeholder(review):
+        errors.append("review.md still contains TBD")
+    ledger = markdown_section(review, "## Evidence Ledger")
+    if not re.search(r"^- \[[^\]]+\]", ledger, re.MULTILINE):
+        errors.append("review.md evidence ledger has no source-id entries")
+
+    verdict = extract_verdict(review)
+    if not verdict:
+        errors.append("review.md missing verdict: ready|blocked|not_ready")
+    elif require_ready and verdict != "ready":
+        errors.append(f"review verdict is {verdict}; expected ready")
+
+    sources = (bundle / "sources.md").read_text(encoding="utf-8") if (bundle / "sources.md").exists() else ""
+    if not re.search(r"^- \[[^\]]+\]", sources, re.MULTILINE):
+        errors.append("sources.md has no source-id entries")
+
+    state = read_state(bundle) if (bundle / "state.json").exists() else {}
+    threads = thread_state(state)
+    for thread in state.get("required_threads", required_threads_for_mode(state.get("mode", ""))):
+        info = threads.get(thread, {})
+        report = bundle / "threads" / f"{thread}.md"
+        if info.get("status") != "reported" or not report.exists():
+            errors.append(f"required thread not reported: {thread}")
+        else:
+            errors.extend(validate_report(report))
+
+    if has_placeholder(brief):
+        errors.append("brief still contains TBD")
+
+    return errors
+
+
+def validate_command(args: argparse.Namespace) -> int:
+    errors = validate_bundle(Path(args.bundle))
+    if errors:
+        print("\n".join(errors), file=sys.stderr)
+        return 1
+    print("ok")
+    return 0
+
+
+def assure_command(args: argparse.Namespace) -> int:
+    bundle = Path(args.bundle)
+    errors = assurance_errors(bundle)
+    if errors:
+        print("\n".join(errors), file=sys.stderr)
+        return 1
+    print("assured")
+    return 0
+
+
+def render_worker_prompt(bundle: Path, thread: str) -> str:
+    state = read_state(bundle)
+    report_path = bundle / "threads" / f"{thread}.md"
+    return f"""You are a product-research worker.
+
+You are not alone in the codebase. Do not revert or overwrite edits by others.
+Own only this worker report:
+{report_path}
+
+Goal:
+{state["goal"]}
+
+Mode:
+{state["mode"]}
+
+Decision:
+{state.get("decision") or "TBD"}
+
+Context:
+{state.get("context") or "TBD"}
+
+Thread:
+{thread} - {THREADS[thread]}
+
+Write a concise report with:
+- evidence gathered, with source IDs or file paths
+- claims and confidence
+- contradictions or gaps
+- recommendation for this thread
+- validation or proof still needed
+
+Do not edit final brief.md, findings.md, review.md, or state.json. Leave those for the orchestrator.
+"""
+
+
+def worker_prompt_command(args: argparse.Namespace) -> int:
+    bundle = Path(args.bundle)
+    errors = validate_bundle(bundle)
+    if errors:
+        print("\n".join(errors), file=sys.stderr)
+        return 1
+
+    thread = args.thread
+    if thread not in THREADS:
+        raise SystemExit(f"unknown thread: {thread}")
+
+    print(render_worker_prompt(bundle, thread))
+    return 0
+
+
+def worker_start_command(args: argparse.Namespace) -> int:
+    bundle = Path(args.bundle)
+    errors = validate_bundle(bundle)
+    if errors:
+        print("\n".join(errors), file=sys.stderr)
+        return 1
+
+    thread = args.thread
+    if thread not in THREADS:
+        raise SystemExit(f"unknown thread: {thread}")
+
+    state = read_state(bundle)
+    report_path = bundle / "threads" / f"{thread}.md"
+    if not report_path.exists():
+        write_text(
+            report_path,
+            f"""# {thread}
+
+## Evidence
+
+TBD
+
+## Claims
+
+TBD
+
+## Contradictions Or Gaps
+
+TBD
+
+## Recommendation
+
+TBD
+
+## Validation Needed
+
+TBD
+""",
+        )
+
+    thread_state(state)[thread] = {
+        "status": "started",
+        "report": str(report_path),
+        "started_at": utc_now(),
+    }
+    save_state(bundle, state)
+    print(render_worker_prompt(bundle, thread))
+    return 0
+
+
+def worker_import_command(args: argparse.Namespace) -> int:
+    bundle = Path(args.bundle)
+    errors = validate_bundle(bundle)
+    if errors:
+        print("\n".join(errors), file=sys.stderr)
+        return 1
+
+    thread = args.thread
+    if thread not in THREADS:
+        raise SystemExit(f"unknown thread: {thread}")
+
+    source = Path(args.file)
+    if not source.is_file():
+        raise SystemExit(f"missing report file: {source}")
+    report_errors = validate_report(source)
+    if report_errors:
+        print("\n".join(report_errors), file=sys.stderr)
+        return 1
+
+    report_path = bundle / "threads" / f"{thread}.md"
+    if source.resolve() != report_path.resolve():
+        shutil.copyfile(source, report_path)
+
+    state = read_state(bundle)
+    thread_state(state)[thread] = {
+        "status": "reported",
+        "report": str(report_path),
+        "imported_at": utc_now(),
+    }
+    save_state(bundle, state)
+    print(report_path)
+    return 0
+
+
+def skip_thread_command(args: argparse.Namespace) -> int:
+    bundle = Path(args.bundle)
+    errors = validate_bundle(bundle)
+    if errors:
+        print("\n".join(errors), file=sys.stderr)
+        return 1
+
+    thread = args.thread
+    if thread not in THREADS:
+        raise SystemExit(f"unknown thread: {thread}")
+    if not args.reason.strip():
+        raise SystemExit("--reason is required")
+
+    state = read_state(bundle)
+    required = [
+        item
+        for item in state.get("required_threads", required_threads_for_mode(state.get("mode", "")))
+        if item != thread
+    ]
+    state["required_threads"] = required
+    thread_state(state)[thread] = {
+        "status": "skipped",
+        "reason": args.reason,
+        "skipped_at": utc_now(),
+    }
+    save_state(bundle, state)
+    print(f"skipped {thread}")
+    return 0
+
+
+def complete_command(args: argparse.Namespace) -> int:
+    bundle = Path(args.bundle)
+    errors = assurance_errors(bundle, require_ready=False)
+    if errors:
+        print("\n".join(errors), file=sys.stderr)
+        return 1
+
+    verdict = review_verdict(bundle)
+    state = read_state(bundle)
+    state["review_verdict"] = verdict
+    if verdict != "ready":
+        state["status"] = "blocked" if verdict == "blocked" else "not_ready"
+        save_state(bundle, state)
+        print(f"review verdict is {verdict}; not marking ready", file=sys.stderr)
+        return 1
+
+    state["status"] = "ready"
+    save_state(bundle, state)
+    print("ready")
+    return 0
+
+
+def review_command(args: argparse.Namespace) -> int:
+    bundle = Path(args.bundle)
+    errors = assurance_errors(bundle, require_ready=False)
+
+    review = read_review(bundle).strip() if (bundle / "review.md").exists() else ""
+    verdict = extract_verdict(review) or "not_ready"
+    if review:
+        print(f"product-research review: {verdict}\nbundle: {bundle}\n")
+        print(review)
+    if errors:
+        print("\n".join(errors), file=sys.stderr)
+    return 0 if not errors and verdict == "ready" else 1
+
+
+def status_command(args: argparse.Namespace) -> int:
+    state = read_state(Path(args.bundle))
+    print(json.dumps(state, indent=2))
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Goal-driven product research bundle helper.")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    init = sub.add_parser("init", help="establish a research goal bundle")
+    init.add_argument("--goal", required=True)
+    init.add_argument("--mode", choices=sorted(MODES), default="build-what")
+    init.add_argument("--decision")
+    init.add_argument("--context")
+    init.add_argument("--constraints")
+    init.add_argument("--handoff", action="store_true")
+    init.add_argument("--out")
+    init.set_defaults(func=init_bundle)
+
+    validate = sub.add_parser("validate", help="validate bundle structure")
+    validate.add_argument("bundle")
+    validate.set_defaults(func=validate_command)
+
+    assure = sub.add_parser("assure", help="run closeout assurance gates")
+    assure.add_argument("bundle")
+    assure.set_defaults(func=assure_command)
+
+    worker = sub.add_parser("worker-prompt", help="print a bounded worker prompt")
+    worker.add_argument("bundle")
+    worker.add_argument("--thread", choices=sorted(THREADS), required=True)
+    worker.set_defaults(func=worker_prompt_command)
+
+    worker_start = sub.add_parser("worker-start", help="register a worker thread and print its prompt")
+    worker_start.add_argument("bundle")
+    worker_start.add_argument("--thread", choices=sorted(THREADS), required=True)
+    worker_start.set_defaults(func=worker_start_command)
+
+    worker_import = sub.add_parser("worker-import", help="import a worker report")
+    worker_import.add_argument("bundle")
+    worker_import.add_argument("--thread", choices=sorted(THREADS), required=True)
+    worker_import.add_argument("--file", required=True)
+    worker_import.set_defaults(func=worker_import_command)
+
+    skip_thread = sub.add_parser("skip-thread", help="remove a required thread with a reason")
+    skip_thread.add_argument("bundle")
+    skip_thread.add_argument("--thread", choices=sorted(THREADS), required=True)
+    skip_thread.add_argument("--reason", required=True)
+    skip_thread.set_defaults(func=skip_thread_command)
+
+    complete = sub.add_parser("complete", help="run assurance and mark bundle ready")
+    complete.add_argument("bundle")
+    complete.set_defaults(func=complete_command)
+
+    review = sub.add_parser("review", help="print the curated orchestrator closeout review")
+    review.add_argument("bundle")
+    review.set_defaults(func=review_command)
+
+    status = sub.add_parser("status", help="print bundle state")
+    status.add_argument("bundle")
+    status.set_defaults(func=status_command)
+
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

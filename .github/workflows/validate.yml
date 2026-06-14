@@ -15,10 +15,12 @@ jobs:
           python-version: "3.x"
       - run: scripts/validate-skills
       - run: bash -n scripts/committer scripts/install-skills hooks/pre-commit
+      - run: python3 -m py_compile skills/product-researcher/scripts/product-research
       - run: |
           install_dir="$(mktemp -d)"
-          AGENTS_SKILLS_DIR="$install_dir" scripts/install-skills
-          if AGENTS_SKILLS_DIR="$install_dir" scripts/install-skills ../skill-name; then
+          AGENTS_SKILLS_DIR="$install_dir" scripts/install-skills product-researcher
+          test -L "$install_dir/product-researcher"
+          if AGENTS_SKILLS_DIR="$install_dir" scripts/install-skills ../product-researcher; then
             echo "path-like skill names should fail"
             exit 1
           fi
@@ -35,3 +37,179 @@ jobs:
           install_all_dir="$(mktemp -d)"
           AGENTS_SKILLS_DIR="$install_all_dir" scripts/install-skills
           test -L "$install_all_dir/linked-skill"
+      - run: |
+          bundle="$(mktemp -d)"
+          skills/product-researcher/scripts/product-research init --goal "Validate product researcher helper" --mode build-how --decision "CI proof" --context "$PWD" --out "$bundle"
+          skills/product-researcher/scripts/product-research validate "$bundle"
+          worker_prompt="$(skills/product-researcher/scripts/product-research worker-prompt "$bundle" --thread technical-investigator)"
+          printf "%s\n" "$worker_prompt" | grep -q "review.md"
+          if skills/product-researcher/scripts/product-research assure "$bundle"; then
+            echo "initial assurance should fail"
+            exit 1
+          fi
+          legacy="$(mktemp -d)"
+          skills/product-researcher/scripts/product-research init --goal "Legacy bundle without review" --mode build-how --out "$legacy"
+          rm -f "$legacy/review.md"
+          skills/product-researcher/scripts/product-research validate "$legacy"
+          if skills/product-researcher/scripts/product-research assure "$legacy"; then
+            echo "legacy bundle without review should not assure"
+            exit 1
+          fi
+          placeholder="$(mktemp -d)"
+          skills/product-researcher/scripts/product-research init --goal "Reject placeholder report" --mode architecture --out "$placeholder"
+          skills/product-researcher/scripts/product-research worker-start "$placeholder" --thread architect >/dev/null
+          if skills/product-researcher/scripts/product-research worker-import "$placeholder" --thread architect --file "$placeholder/threads/architect.md"; then
+            echo "placeholder import should fail"
+            exit 1
+          fi
+          for thread in architect customer-value market-scout skeptic technical-investigator; do
+            report="/tmp/$thread.md"
+            {
+              echo "# $thread"
+              echo
+              echo "## Evidence"
+              echo
+              echo "- [repo] Local repository fixture."
+              echo
+              echo "## Claims"
+              echo
+              echo "- Fixture claim. Confidence: high."
+              echo
+              echo "## Contradictions Or Gaps"
+              echo
+              echo "- None."
+              echo
+              echo "## Recommendation"
+              echo
+              echo "- Continue."
+              echo
+              echo "## Validation Needed"
+              echo
+              echo "- CI."
+            } >"$report"
+            skills/product-researcher/scripts/product-research worker-import "$bundle" --thread "$thread" --file "$report"
+          done
+          {
+            echo "# Sources"
+            echo
+            echo "- [repo] Local repository fixture."
+          } >"$bundle/sources.md"
+          {
+            echo "# Findings"
+            echo
+            echo "## Accepted"
+            echo
+            echo "None."
+            echo
+            echo "## Rejected"
+            echo
+            echo "None."
+            echo
+            echo "## Deferred"
+            echo
+            echo "Use on a real research run."
+          } >"$bundle/findings.md"
+          {
+            echo "# Research Brief"
+            echo
+            echo "## Recommendation"
+            echo
+            echo "Ship the helper."
+            echo
+            echo "## Evidence"
+            echo
+            echo "- [repo] Local repository fixture."
+            echo
+            echo "## Validation"
+            echo
+            echo "CI smoke passed."
+            echo
+            echo "## Next Slice"
+            echo
+            echo "Use on a real research run."
+          } >"$bundle/brief.md"
+          {
+            echo "# Research Review"
+            echo
+            echo "## Decision"
+            echo
+            echo "Ship the helper."
+            echo
+            echo "## Verdict"
+            echo
+            echo "verdict: ready"
+            echo
+            echo "## Accepted Findings"
+            echo
+            echo "None."
+            echo
+            echo "## Rejected Findings"
+            echo
+            echo "None."
+            echo
+            echo "## Deferred Findings"
+            echo
+            echo "Use on a real research run."
+            echo
+            echo "## Evidence Ledger"
+            echo
+            echo "- [repo] Local repository fixture."
+            echo
+            echo "## Confidence"
+            echo
+            echo "high; CI fixture covers helper closeout shape."
+            echo
+            echo "## Assurance"
+            echo
+            echo "validate, assure, complete, and review commands passed."
+          } >"$bundle/review.md"
+          cp "$bundle/review.md" "$bundle/review.ready.md"
+          cp "$bundle/findings.md" "$bundle/findings.ready.md"
+          {
+            echo "# Findings"
+            echo
+            echo "## Accepted Findings"
+            echo
+            echo "None."
+            echo
+            echo "## Rejected Findings"
+            echo
+            echo "None."
+            echo
+            echo "## Deferred Findings"
+            echo
+            echo "Use on a real research run."
+          } >"$bundle/findings.md"
+          if skills/product-researcher/scripts/product-research assure "$bundle"; then
+            echo "findings headings should require exact sections"
+            exit 1
+          fi
+          cp "$bundle/findings.ready.md" "$bundle/findings.md"
+          sed 's/- \[repo\] Local repository fixture./Local repository fixture./' "$bundle/review.ready.md" >"$bundle/review.md"
+          if skills/product-researcher/scripts/product-research assure "$bundle"; then
+            echo "review evidence ledger should require source IDs"
+            exit 1
+          fi
+          sed 's/verdict: ready/verdict: not_ready/' "$bundle/review.ready.md" >"$bundle/review.md"
+          if skills/product-researcher/scripts/product-research complete "$bundle"; then
+            echo "not_ready verdict should not complete"
+            exit 1
+          fi
+          skills/product-researcher/scripts/product-research status "$bundle" | grep -q '"status": "not_ready"'
+          not_ready_review="$(skills/product-researcher/scripts/product-research review "$bundle" || true)"
+          printf "%s\n" "$not_ready_review" | grep -q "product-research review: not_ready"
+          sed 's/verdict: ready/verdict: blocked/' "$bundle/review.ready.md" >"$bundle/review.md"
+          if skills/product-researcher/scripts/product-research assure "$bundle"; then
+            echo "blocked verdict should not assure"
+            exit 1
+          fi
+          if skills/product-researcher/scripts/product-research complete "$bundle"; then
+            echo "blocked verdict should not complete"
+            exit 1
+          fi
+          skills/product-researcher/scripts/product-research status "$bundle" | grep -q '"status": "blocked"'
+          blocked_review="$(skills/product-researcher/scripts/product-research review "$bundle" || true)"
+          printf "%s\n" "$blocked_review" | grep -q "product-research review: blocked"
+          cp "$bundle/review.ready.md" "$bundle/review.md"
+          skills/product-researcher/scripts/product-research complete "$bundle"
+          skills/product-researcher/scripts/product-research review "$bundle" | grep -q "product-research review: ready"

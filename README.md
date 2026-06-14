@@ -33,7 +33,7 @@ Rules:
 Install selected skills with the helper:
 
 ```bash
-scripts/install-skills skill-name
+scripts/install-skills product-researcher
 ```
 
 By default it symlinks into `$HOME/.agents/skills`.
@@ -78,6 +78,13 @@ Repo-specific rules go below that pointer. Do not copy the shared blocks into do
 - Verifies YAML front matter plus required `name` and `description`.
 - Enforces quoted, terse descriptions.
 - Enable as a local hook with `git config core.hooksPath hooks`.
+
+`skills/product-researcher/scripts/product-research`
+
+- Creates explicit goal bundles.
+- Validates and assures research closeout.
+- Starts/imports bounded worker thread reports.
+- Prints the orchestrator-owned review output from `review.md`.
 
 ## Syncing
 
