@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if git diff --cached --name-only | grep -qE '(^skills/.*/SKILL\.md$|^skills/.*/references/|^scripts/validate-skills$)'; then
+  scripts/validate-skills
+fi

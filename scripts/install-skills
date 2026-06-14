@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SKILLS_DIR="$ROOT/skills"
+TARGET_DIR="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}"
+
+usage() {
+  cat >&2 <<'EOF'
+usage: scripts/install-skills [SKILL...]
+
+Symlinks skills into $AGENTS_SKILLS_DIR, defaulting to $HOME/.agents/skills.
+With no SKILL arguments, installs every real skill folder under skills/.
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+"$ROOT/scripts/validate-skills" >/dev/null
+mkdir -p "$TARGET_DIR"
+
+skills=("$@")
+if [[ ${#skills[@]} -eq 0 ]]; then
+  mapfile -t skills < <(
+    for skill_file in "$SKILLS_DIR"/*/SKILL.md; do
+      [[ -e "$skill_file" ]] || continue
+      basename "$(dirname "$skill_file")"
+    done | sort
+  )
+fi
+
+for skill in "${skills[@]}"; do
+  if [[ ! "$skill" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+    echo "invalid skill name: $skill" >&2
+    exit 1
+  fi
+
+  source="$SKILLS_DIR/$skill"
+  target="$TARGET_DIR/$skill"
+
+  if [[ ! -f "$source/SKILL.md" ]]; then
+    echo "missing skill: $skill" >&2
+    exit 1
+  fi
+
+  if [[ -e "$target" && ! -L "$target" ]]; then
+    echo "target exists and is not a symlink: $target" >&2
+    exit 1
+  fi
+
+  ln -sfn "$source" "$target"
+  echo "$target -> $source"
+done

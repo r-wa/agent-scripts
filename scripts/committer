@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'EOF'
+usage: scripts/committer -m "message" FILE...
+
+Stages exactly FILE..., validates skills, and commits with message.
+EOF
+}
+
+message=""
+files=()
+
+while (($#)); do
+  case "$1" in
+    -m|--message)
+      shift
+      [[ $# -gt 0 ]] || { usage; exit 2; }
+      message="$1"
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      while (($#)); do
+        files+=("$1")
+        shift
+      done
+      break
+      ;;
+    -*)
+      echo "unknown option: $1" >&2
+      usage
+      exit 2
+      ;;
+    *)
+      files+=("$1")
+      ;;
+  esac
+  shift
+done
+
+if [[ -z "$message" ]]; then
+  echo "commit message required" >&2
+  usage
+  exit 2
+fi
+
+if [[ ${#files[@]} -eq 0 ]]; then
+  echo "at least one file required" >&2
+  usage
+  exit 2
+fi
+
+if ! git diff --cached --quiet --; then
+  echo "index has existing staged changes; unstage or commit them first" >&2
+  exit 1
+fi
+
+scripts/validate-skills
+git add -- "${files[@]}"
+git commit -m "$message"

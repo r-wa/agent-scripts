@@ -1,0 +1,37 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  skills:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: scripts/validate-skills
+      - run: bash -n scripts/committer scripts/install-skills hooks/pre-commit
+      - run: |
+          install_dir="$(mktemp -d)"
+          AGENTS_SKILLS_DIR="$install_dir" scripts/install-skills
+          if AGENTS_SKILLS_DIR="$install_dir" scripts/install-skills ../skill-name; then
+            echo "path-like skill names should fail"
+            exit 1
+          fi
+          fixture="$(mktemp -d)"
+          mkdir -p "$fixture/linked-skill"
+          {
+            echo "---"
+            echo "name: linked-skill"
+            echo 'description: "Linked skill fixture."'
+            echo "---"
+          } >"$fixture/linked-skill/SKILL.md"
+          ln -s "$fixture/linked-skill" skills/linked-skill
+          trap 'rm -f skills/linked-skill' EXIT
+          install_all_dir="$(mktemp -d)"
+          AGENTS_SKILLS_DIR="$install_all_dir" scripts/install-skills
+          test -L "$install_all_dir/linked-skill"
