@@ -27,6 +27,17 @@ Each important claim should include:
 
 Do not promote an unsourced note into a recommendation.
 
+## Source Hygiene
+
+- Use the smallest source set that answers the decision.
+- Do not store raw chat transcripts, private records, secrets, full exported
+  pages, or broad source dumps in the bundle.
+- Prefer source IDs, paths, URLs, short notes, and relevant excerpts.
+- Redact aggressively when a source contains credentials, tokens, user data, or
+  private conversation content.
+- Treat worker and model output as advisory until verified against primary
+  sources, repo code, tests, docs, or live proof.
+
 ## Confidence Caps
 
 - No customer/value evidence: max `medium`.
@@ -60,6 +71,8 @@ The orchestrator output is a review result, not a report stack. It should:
 - defer work only with a concrete next-slice reason
 - cite source IDs for important claims
 - cap confidence when source families are thin
+- include implementation surface, fit/cause, best fix, refactor tradeoff, proof,
+  and residual risk when the decision is implementation-facing
 - include the assurance commands and worker threads used
 
 Closeout should fail when `review.md` still contains placeholders, lacks a

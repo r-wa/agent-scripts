@@ -43,6 +43,8 @@ jobs:
           skills/product-researcher/scripts/product-research validate "$bundle"
           worker_prompt="$(skills/product-researcher/scripts/product-research worker-prompt "$bundle" --thread technical-investigator)"
           printf "%s\n" "$worker_prompt" | grep -q "review.md"
+          printf "%s\n" "$worker_prompt" | grep -q "Do not create subworkers"
+          printf "%s\n" "$worker_prompt" | grep -q "raw chat"
           if skills/product-researcher/scripts/product-research assure "$bundle"; then
             echo "initial assurance should fail"
             exit 1

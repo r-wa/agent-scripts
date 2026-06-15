@@ -25,6 +25,16 @@ closeout only after the assurance pass is clean or the blockers are explicit.
 Workers are inputs. The orchestrator owns the review output. Do not concatenate
 worker reports into the final answer. Triage them into a single decision record.
 
+Treat worker and second-model output as advisory. Verify accepted claims against
+primary sources, current repo code, tests, or live proof before promoting them
+into findings or recommendations.
+
+Keep context tight. Do not preserve raw chat transcripts, secrets, private
+records, whole-page dumps, or broad source captures in the bundle. Store source
+IDs, paths, URLs, concise notes, and relevant excerpts only. Keep transient
+research bundles out of public repos unless the user explicitly asks to publish
+that artifact.
+
 ## Helper Path
 
 Set the helper once, then use `$PRODUCT_RESEARCH`:
@@ -90,11 +100,15 @@ Collect or infer:
 ## Evidence Rules
 
 - Every important claim needs source IDs.
+- Prefer the smallest source set that contains the truth.
 - Direct provider evidence can stand alone for provider-specific facts.
 - Otherwise prefer multiple independent source families.
 - Mark uncertainty and contradictions.
 - Do not invent pricing, API limits, platform behavior, or customer value.
 - Do not recommend implementation until repo impact and validation are inspected.
+- Research does not authorize push, PR updates, merges, releases, or public
+  comments. Stop at the last authorized boundary unless the user grants that
+  mutation separately.
 
 See `references/evidence-rubric.md`.
 
@@ -112,6 +126,10 @@ It must contain:
 - evidence ledger with source IDs
 - confidence level and cap reason
 - assurance proof: commands, workers, and remaining blockers
+
+For implementation recommendations, also answer the Peter-style review shape:
+affected surface, cause or fit rationale, best fix, refactor tradeoff, proof,
+and residual risk. Say `unknown` or `not proven` when evidence is insufficient.
 
 `$PRODUCT_RESEARCH assure <bundle>` and `complete` exit clean only for
 `verdict: ready`. Blocked and not-ready completion attempts remain non-ready in

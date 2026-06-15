@@ -435,6 +435,10 @@ Write a concise report with:
 - recommendation for this thread
 - validation or proof still needed
 
+Treat your output as advisory until the orchestrator verifies it.
+Use the smallest source set that contains the truth. Do not copy raw chat
+transcripts, secrets, private records, or broad source dumps into the report.
+Do not create subworkers, mutate public state, push, comment, merge, or release.
 Do not edit final brief.md, findings.md, review.md, or state.json. Leave those for the orchestrator.
 """
 
